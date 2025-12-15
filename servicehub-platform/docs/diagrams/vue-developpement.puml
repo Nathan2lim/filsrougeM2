@@ -1,0 +1,91 @@
+@startuml Vue Développement - ServiceHub Platform
+
+skinparam packageStyle folder
+skinparam package {
+    BackgroundColor<<root>> LightYellow
+    BackgroundColor<<src>> LightBlue
+    BackgroundColor<<module>> LightGreen
+}
+
+package "servicehub-platform" <<root>> {
+
+    file "docker-compose.yml"
+    file "docker-compose.prod.yml"
+    file ".env"
+    file "README.md"
+
+    package "docs" {
+        file "01-analyse-fonctionnelle.md"
+        file "01-blocs-metiers.md"
+        file "02-architecture-4plus1.md"
+        file "02-justification-architecture.md"
+        file "03-etude-styles-architecturaux.md"
+
+        package "diagrams" {
+            file "vue-logique.puml"
+            file "vue-developpement.puml"
+            file "vue-processus.puml"
+            file "vue-deploiement.puml"
+            file "vue-scenarios.puml"
+        }
+    }
+
+    package "backend" <<src>> {
+        file "Dockerfile"
+        file "Dockerfile.dev"
+        file "package.json"
+        file "tsconfig.json"
+        file "nest-cli.json"
+
+        package "prisma" {
+            file "schema.prisma"
+            file "seed.ts"
+        }
+
+        package "src" {
+            file "main.ts"
+            file "app.module.ts"
+
+            package "common" <<module>> {
+                package "decorators" { }
+                package "filters" { }
+                package "guards" { }
+                package "interceptors" { }
+                package "pipes" { }
+                package "exceptions" { }
+                package "utils" { }
+            }
+
+            package "config" <<module>> { }
+            package "prisma" <<module>> { }
+
+            package "users" <<module>> {
+                package "controllers" { }
+                package "services" { }
+                package "repositories" { }
+                package "dto" { }
+                package "entities" { }
+                package "interfaces" { }
+            }
+
+            package "tickets" <<module>> { }
+            package "billing" <<module>> { }
+            package "reporting" <<module>> { }
+        }
+
+        package "test" {
+            file "app.e2e-spec.ts"
+            file "jest-e2e.json"
+        }
+    }
+}
+
+note bottom of backend
+    Stack:
+    - NestJS 10.x
+    - TypeScript 5.x
+    - Prisma 5.x
+    - Jest 29.x
+end note
+
+@enduml

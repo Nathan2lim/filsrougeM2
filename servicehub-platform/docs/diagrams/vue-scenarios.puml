@@ -1,0 +1,111 @@
+@startuml Vue Scénarios - Cas d'Utilisation
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+actor "Client" as CLIENT
+actor "Agent Support" as AGENT
+actor "Manager" as MANAGER
+actor "Administrateur" as ADMIN
+actor "Système" as SYSTEM
+
+rectangle "ServiceHub Platform" {
+
+    package "Authentification" {
+        usecase "Se connecter" as UC_LOGIN
+        usecase "Se déconnecter" as UC_LOGOUT
+        usecase "S'inscrire" as UC_REGISTER
+    }
+
+    package "Gestion des Tickets" {
+        usecase "Créer un ticket" as UC_CREATE_TICKET
+        usecase "Consulter ses tickets" as UC_VIEW_OWN_TICKETS
+        usecase "Consulter tous les tickets" as UC_VIEW_ALL_TICKETS
+        usecase "Traiter un ticket" as UC_PROCESS_TICKET
+        usecase "Assigner un ticket" as UC_ASSIGN_TICKET
+        usecase "Commenter un ticket" as UC_COMMENT_TICKET
+        usecase "Changer le statut" as UC_CHANGE_STATUS
+        usecase "Supprimer un ticket" as UC_DELETE_TICKET
+    }
+
+    package "Facturation" {
+        usecase "Créer une facture" as UC_CREATE_INVOICE
+        usecase "Consulter ses factures" as UC_VIEW_OWN_INVOICES
+        usecase "Consulter toutes les factures" as UC_VIEW_ALL_INVOICES
+        usecase "Envoyer une facture" as UC_SEND_INVOICE
+        usecase "Enregistrer un paiement" as UC_RECORD_PAYMENT
+        usecase "Annuler une facture" as UC_CANCEL_INVOICE
+    }
+
+    package "Reporting" {
+        usecase "Consulter le dashboard" as UC_VIEW_DASHBOARD
+        usecase "Générer un rapport" as UC_GENERATE_REPORT
+        usecase "Exporter les données" as UC_EXPORT_DATA
+    }
+
+    package "Administration" {
+        usecase "Gérer les utilisateurs" as UC_MANAGE_USERS
+        usecase "Gérer les rôles" as UC_MANAGE_ROLES
+        usecase "Activer/Désactiver un compte" as UC_TOGGLE_USER
+    }
+}
+
+' Authentification
+CLIENT --> UC_LOGIN
+CLIENT --> UC_REGISTER
+AGENT --> UC_LOGIN
+MANAGER --> UC_LOGIN
+ADMIN --> UC_LOGIN
+UC_LOGIN <-- UC_LOGOUT : <<include>>
+
+' Tickets - Client
+CLIENT --> UC_CREATE_TICKET
+CLIENT --> UC_VIEW_OWN_TICKETS
+CLIENT --> UC_COMMENT_TICKET
+
+' Tickets - Agent
+AGENT --> UC_VIEW_ALL_TICKETS
+AGENT --> UC_PROCESS_TICKET
+AGENT --> UC_COMMENT_TICKET
+AGENT --> UC_CHANGE_STATUS
+
+' Tickets - Manager
+MANAGER --> UC_VIEW_ALL_TICKETS
+MANAGER --> UC_ASSIGN_TICKET
+
+' Tickets - Admin
+ADMIN --> UC_DELETE_TICKET
+
+' Facturation - Client
+CLIENT --> UC_VIEW_OWN_INVOICES
+
+' Facturation - Manager
+MANAGER --> UC_CREATE_INVOICE
+MANAGER --> UC_VIEW_ALL_INVOICES
+MANAGER --> UC_SEND_INVOICE
+MANAGER --> UC_RECORD_PAYMENT
+MANAGER --> UC_CANCEL_INVOICE
+
+' Reporting
+AGENT --> UC_VIEW_DASHBOARD
+MANAGER --> UC_VIEW_DASHBOARD
+MANAGER --> UC_GENERATE_REPORT
+MANAGER --> UC_EXPORT_DATA
+ADMIN --> UC_EXPORT_DATA
+
+' Administration
+ADMIN --> UC_MANAGE_USERS
+ADMIN --> UC_MANAGE_ROLES
+ADMIN --> UC_TOGGLE_USER
+MANAGER --> UC_TOGGLE_USER
+
+' Système
+SYSTEM --> UC_CREATE_TICKET : API
+SYSTEM --> UC_VIEW_ALL_TICKETS : API
+
+' Relations
+UC_PROCESS_TICKET ..> UC_CHANGE_STATUS : <<include>>
+UC_CREATE_INVOICE ..> UC_VIEW_ALL_TICKETS : <<extend>>
+
+@enduml

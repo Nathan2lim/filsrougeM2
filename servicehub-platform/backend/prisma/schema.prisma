@@ -1,0 +1,202 @@
+// ============================================
+// PRISMA SCHEMA - SERVICEHUB PLATFORM
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// MODULE USERS
+// ============================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  role            Role              @relation(fields: [roleId], references: [id])
+  roleId          String            @map("role_id")
+  assignedTickets Ticket[]          @relation("AssignedTickets")
+  createdTickets  Ticket[]          @relation("CreatedTickets")
+  comments        TicketComment[]
+  invoicesCreated Invoice[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  permissions String[] // Array de permissions
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users User[]
+
+  @@map("roles")
+}
+
+// ============================================
+// MODULE TICKETS
+// ============================================
+
+model Ticket {
+  id          String         @id @default(uuid())
+  reference   String         @unique // AUTO-GENERATED: TKT-YYYYMMDD-XXXX
+  title       String
+  description String
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  resolvedAt  DateTime?      @map("resolved_at")
+  dueDate     DateTime?      @map("due_date")
+
+  // Relations
+  createdBy    User            @relation("CreatedTickets", fields: [createdById], references: [id])
+  createdById  String          @map("created_by_id")
+  assignedTo   User?           @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  assignedToId String?         @map("assigned_to_id")
+  comments     TicketComment[]
+  attachments  Attachment[]
+  invoiceLines InvoiceLine[]
+
+  @@map("tickets")
+}
+
+model TicketComment {
+  id         String   @id @default(uuid())
+  content    String
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String @map("ticket_id")
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId String @map("author_id")
+
+  @@map("ticket_comments")
+}
+
+model Attachment {
+  id        String   @id @default(uuid())
+  filename  String
+  path      String
+  mimeType  String   @map("mime_type")
+  size      Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String @map("ticket_id")
+
+  @@map("attachments")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CLIENT
+  WAITING_INTERNAL
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ============================================
+// MODULE BILLING
+// ============================================
+
+model Invoice {
+  id        String        @id @default(uuid())
+  reference String        @unique // AUTO-GENERATED: INV-YYYYMMDD-XXXX
+  status    InvoiceStatus @default(DRAFT)
+  issueDate DateTime      @default(now()) @map("issue_date")
+  dueDate   DateTime      @map("due_date")
+  subtotal  Decimal       @db.Decimal(10, 2)
+  taxRate   Decimal       @default(20.00) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount Decimal       @map("tax_amount") @db.Decimal(10, 2)
+  total     Decimal       @db.Decimal(10, 2)
+  notes     String?
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  createdById String        @map("created_by_id")
+  lines       InvoiceLine[]
+  payments    Payment[]
+
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid())
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+
+  // Relations
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId String  @map("invoice_id")
+  ticket    Ticket? @relation(fields: [ticketId], references: [id])
+  ticketId  String? @map("ticket_id")
+
+  @@map("invoice_lines")
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  amount    Decimal       @db.Decimal(10, 2)
+  method    PaymentMethod
+  reference String? // Référence externe (numéro de transaction)
+  paidAt    DateTime      @default(now()) @map("paid_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  invoiceId String  @map("invoice_id")
+
+  @@map("payments")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  BANK_TRANSFER
+  CHECK
+  CASH
+  OTHER
+}

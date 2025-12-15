@@ -1,0 +1,111 @@
+@startuml Style Architectural - Architecture en Couches
+
+!define LAYER package
+!define COMPONENT component
+
+skinparam package {
+    BackgroundColor<<presentation>> LightBlue
+    BackgroundColor<<business>> LightGreen
+    BackgroundColor<<persistence>> LightYellow
+    BackgroundColor<<infrastructure>> LightGray
+}
+
+title Architecture en Couches + Principes Clean Architecture
+
+LAYER "Couche Présentation (Interface)" <<presentation>> {
+    COMPONENT "Controllers" as CTRL {
+        [REST Endpoints]
+        [Request Validation]
+        [Response Formatting]
+    }
+    COMPONENT "DTOs" as DTO {
+        [CreateUserDto]
+        [UpdateUserDto]
+        [LoginDto]
+    }
+    COMPONENT "Documentation" as DOC {
+        [Swagger/OpenAPI]
+        [API Tags]
+    }
+}
+
+LAYER "Couche Métier (Application)" <<business>> {
+    COMPONENT "Services" as SVC {
+        [Business Logic]
+        [Orchestration]
+        [Validation Métier]
+    }
+    COMPONENT "Entities" as ENT {
+        [User Entity]
+        [Ticket Entity]
+        [Invoice Entity]
+    }
+    COMPONENT "Interfaces" as INT {
+        [IUsersRepository]
+        [ITicketsRepository]
+        [IInvoicesRepository]
+    }
+}
+
+LAYER "Couche Persistance (Infrastructure)" <<persistence>> {
+    COMPONENT "Repositories" as REPO {
+        [UsersRepository]
+        [TicketsRepository]
+        [InvoicesRepository]
+    }
+    COMPONENT "Prisma" as PRISMA {
+        [PrismaService]
+        [PrismaClient]
+    }
+}
+
+LAYER "Couche Infrastructure" <<infrastructure>> {
+    database "PostgreSQL" as DB
+    COMPONENT "External Services" as EXT {
+        [Email Service]
+        [File Storage]
+    }
+}
+
+' Flux descendant
+CTRL --> SVC : Appelle
+SVC --> INT : Utilise
+INT <|.. REPO : Implémente
+REPO --> PRISMA : Utilise
+PRISMA --> DB : Requête
+
+' Notes
+note right of CTRL
+    **Responsabilités:**
+    - Recevoir les requêtes HTTP
+    - Valider les données d'entrée
+    - Retourner les réponses formatées
+    - Documenter l'API
+end note
+
+note right of SVC
+    **Responsabilités:**
+    - Implémenter la logique métier
+    - Orchestrer les opérations
+    - Valider les règles métier
+    - Ne pas connaître la persistence
+end note
+
+note right of REPO
+    **Responsabilités:**
+    - Abstraire l'accès aux données
+    - Implémenter les interfaces
+    - Exécuter les requêtes
+end note
+
+' Principes appliqués
+note bottom of ENT
+    **Principes SOLID:**
+    - **S**: Une classe = Une responsabilité
+    - **O**: Ouvert extension, Fermé modification
+    - **L**: Substitution via interfaces
+    - **I**: Interfaces spécialisées
+    - **D**: Dépendance vers abstractions
+end note
+
+@enduml

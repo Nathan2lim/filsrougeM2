@@ -1,0 +1,99 @@
+@startuml Vue Logique - ServiceHub Platform
+
+!define RECTANGLE class
+
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor<<Module>> LightBlue
+    BackgroundColor<<Layer>> LightGreen
+    BackgroundColor<<Global>> LightYellow
+}
+
+package "Application NestJS" {
+
+    package "Modules Globaux" <<Global>> {
+        [CommonModule] as Common
+        [ConfigModule] as Config
+        [PrismaModule] as Prisma
+    }
+
+    package "Couche Présentation" <<Layer>> {
+        [AuthController]
+        [UsersController]
+        [TicketsController]
+        [InvoicesController]
+        [PaymentsController]
+        [DashboardController]
+        [ReportsController]
+    }
+
+    package "Couche Métier" <<Layer>> {
+        [AuthService]
+        [UsersService]
+        [TicketsService]
+        [InvoicesService]
+        [PaymentsService]
+        [DashboardService]
+        [ReportsService]
+        [KpiService]
+        [BillingCalculatorService]
+    }
+
+    package "Couche Persistance" <<Layer>> {
+        [UsersRepository]
+        [TicketsRepository]
+        [InvoicesRepository]
+        interface IUsersRepository
+        interface ITicketsRepository
+        interface IInvoicesRepository
+    }
+
+    package "Base de données" {
+        database "PostgreSQL" as DB
+    }
+}
+
+' Relations Controllers -> Services
+AuthController --> AuthService
+UsersController --> UsersService
+TicketsController --> TicketsService
+InvoicesController --> InvoicesService
+PaymentsController --> PaymentsService
+DashboardController --> DashboardService
+ReportsController --> ReportsService
+
+' Relations Services -> Repositories
+AuthService --> IUsersRepository
+UsersService --> IUsersRepository
+TicketsService --> ITicketsRepository
+InvoicesService --> IInvoicesRepository
+DashboardService --> ITicketsRepository
+DashboardService --> IInvoicesRepository
+ReportsService --> ITicketsRepository
+ReportsService --> IInvoicesRepository
+
+' Implementations
+IUsersRepository <|.. UsersRepository
+ITicketsRepository <|.. TicketsRepository
+IInvoicesRepository <|.. InvoicesRepository
+
+' Repositories -> DB
+UsersRepository --> DB
+TicketsRepository --> DB
+InvoicesRepository --> DB
+
+' Common module utilisé partout
+Common -[hidden]-> Config
+
+note right of Common
+    Guards, Filters,
+    Interceptors,
+    Decorators, Utils
+end note
+
+note right of Prisma
+    Abstraction BDD
+    via PrismaClient
+end note
+
+@enduml

@@ -1,0 +1,80 @@
+@startuml Vue Processus - Flux Authentification
+
+title Flux d'Authentification JWT
+
+actor Client
+participant "AuthController" as AC
+participant "AuthService" as AS
+participant "UsersRepository" as UR
+participant "JwtService" as JWT
+database "PostgreSQL" as DB
+
+== Connexion ==
+
+Client -> AC: POST /auth/login\n{email, password}
+activate AC
+
+AC -> AS: login(loginDto)
+activate AS
+
+AS -> UR: findByEmail(email)
+activate UR
+UR -> DB: SELECT * FROM users WHERE email = ?
+DB --> UR: user data
+UR --> AS: User | null
+deactivate UR
+
+alt user not found or inactive
+    AS --> AC: UnauthorizedException
+    AC --> Client: 401 Unauthorized
+else user found
+    AS -> AS: bcrypt.compare(password, user.password)
+
+    alt password invalid
+        AS --> AC: UnauthorizedException
+        AC --> Client: 401 Unauthorized
+    else password valid
+        AS -> JWT: sign(payload)
+        activate JWT
+        JWT --> AS: accessToken
+        deactivate JWT
+
+        AS --> AC: { accessToken, user }
+        deactivate AS
+        AC --> Client: 200 OK\n{ accessToken, user }
+        deactivate AC
+    end
+end
+
+== Accès Route Protégée ==
+
+Client -> AC: GET /protected\nAuthorization: Bearer <token>
+activate AC
+
+AC -> AC: AuthGuard.canActivate()
+activate AC #LightGreen
+
+AC -> JWT: verify(token, secret)
+activate JWT
+
+alt token invalid
+    JWT --> AC: JsonWebTokenError
+    AC --> Client: 401 Unauthorized
+else token valid
+    JWT --> AC: payload
+    deactivate JWT
+    AC -> AC: request.user = payload
+    deactivate AC
+    AC -> AC: RolesGuard.canActivate()
+    activate AC #LightBlue
+
+    alt insufficient permissions
+        AC --> Client: 403 Forbidden
+    else permissions ok
+        deactivate AC
+        AC --> Client: 200 OK + data
+    end
+end
+deactivate AC
+
+@enduml

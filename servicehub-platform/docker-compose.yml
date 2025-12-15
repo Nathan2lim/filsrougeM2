@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # BASE DE DONNÉES POSTGRESQL
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: servicehub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-servicehub}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-servicehub_secret}
+      POSTGRES_DB: ${DB_NAME:-servicehub_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - servicehub-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-servicehub} -d ${DB_NAME:-servicehub_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # BACKEND NESTJS (MODE DÉVELOPPEMENT)
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: servicehub-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${DB_USER:-servicehub}:${DB_PASSWORD:-servicehub_secret}@postgres:5432/${DB_NAME:-servicehub_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-1d}
+      PORT: ${BACKEND_PORT:-3000}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - servicehub-network
+    command: npm run start:dev
+
+  # ============================================
+  # FRONTEND REACT (MODE DÉVELOPPEMENT)
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: servicehub-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://backend:3000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - servicehub-network
+
+  # ============================================
+  # ADMINER (INTERFACE DB)
+  # ============================================
+  adminer:
+    image: adminer:latest
+    container_name: servicehub-adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    depends_on:
+      - postgres
+    networks:
+      - servicehub-network
+
+networks:
+  servicehub-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

@@ -1,0 +1,18 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@common/(.*)$": "<rootDir>/../src/common/$1",
+    "^@config/(.*)$": "<rootDir>/../src/config/$1",
+    "^@prisma/(.*)$": "<rootDir>/../src/prisma/$1",
+    "^@users/(.*)$": "<rootDir>/../src/users/$1",
+    "^@tickets/(.*)$": "<rootDir>/../src/tickets/$1",
+    "^@billing/(.*)$": "<rootDir>/../src/billing/$1",
+    "^@reporting/(.*)$": "<rootDir>/../src/reporting/$1"
+  }
+}

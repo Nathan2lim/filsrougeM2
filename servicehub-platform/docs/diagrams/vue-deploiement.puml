@@ -1,0 +1,92 @@
+@startuml Vue Déploiement - ServiceHub Platform
+
+!define DOCKER node
+!define CONTAINER component
+
+skinparam node {
+    BackgroundColor LightBlue
+}
+
+skinparam component {
+    BackgroundColor LightGreen
+}
+
+skinparam database {
+    BackgroundColor LightYellow
+}
+
+title Architecture de Déploiement Docker
+
+cloud "Internet" {
+    actor "Client Web" as client
+    actor "API Consumer" as api
+}
+
+node "Docker Host" as docker {
+
+    frame "servicehub-network (bridge)" as network {
+
+        node "servicehub-backend" as backend {
+            component "NestJS Application" as nestjs {
+                [Controllers]
+                [Services]
+                [Repositories]
+            }
+            port "3000" as p3000
+        }
+
+        node "servicehub-postgres" as postgres {
+            database "PostgreSQL 16" as db {
+                [users]
+                [roles]
+                [tickets]
+                [ticket_comments]
+                [attachments]
+                [invoices]
+                [invoice_lines]
+                [payments]
+            }
+            port "5432" as p5432
+        }
+
+        node "servicehub-adminer" as adminer {
+            component "Adminer UI" as adminui
+            port "8080" as p8080
+        }
+    }
+
+    storage "postgres_data" as volume {
+    }
+}
+
+' Connexions externes
+client --> p3000 : HTTPS
+api --> p3000 : REST API
+
+' Connexions internes
+nestjs --> db : Prisma Client
+adminui --> db : PostgreSQL Protocol
+
+' Volume
+db --> volume : Persistent Storage
+
+' Annotations
+note right of backend
+    Environment Variables:
+    - NODE_ENV
+    - DATABASE_URL
+    - JWT_SECRET
+    - PORT
+end note
+
+note right of postgres
+    Health Check:
+    pg_isready -U servicehub
+end note
+
+note bottom of volume
+    Volume Docker persistant
+    pour les données PostgreSQL
+end note
+
+@enduml
