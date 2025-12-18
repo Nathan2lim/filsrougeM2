@@ -1,0 +1,270 @@
+================================================================================
+                SÉANCE 4 - JUSTIFICATION DU STYLE ARCHITECTURAL
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. CONTEXTE DU PROJET (RAPPEL)
+--------------------------------------------------------------------------------
+
+ServiceHub est une plateforme de gestion de services B2B permettant :
+- La gestion de la relation client via un système de ticketing
+- Le suivi des interventions techniques
+- La facturation automatisée liée aux interventions
+- Le reporting pour le pilotage de l'activité
+
+Domaines métier identifiés : Utilisateurs, Tickets, Facturation, Reporting
+Stack technique : NestJS, PostgreSQL, Prisma, Docker
+
+--------------------------------------------------------------------------------
+2. STYLES ARCHITECTURAUX ENVISAGÉS
+--------------------------------------------------------------------------------
+
+Trois styles architecturaux ont été évalués pour structurer l'application :
+
+A) MVC (Model-View-Controller)
+   Organisation classique séparant données, logique de présentation et contrôle.
+
+B) Architecture en couches
+   Organisation verticale : Présentation -> Métier -> Données.
+
+C) SOA (Service Oriented Architecture)
+   Organisation horizontale en services métier indépendants et communicants.
+
+--------------------------------------------------------------------------------
+3. ANALYSE COMPARATIVE
+--------------------------------------------------------------------------------
+
++------------------+----------------------------+----------------------------+
+|     CRITÈRE      |         AVANTAGES          |       INCONVÉNIENTS        |
++------------------+----------------------------+----------------------------+
+|                               MVC                                          |
++------------------+----------------------------+----------------------------+
+| Séparation       | Excellente séparation      | Insuffisant pour structu-  |
+| des rôles        | UI / logique / données     | rer un backend complet     |
++------------------+----------------------------+----------------------------+
+| Complexité       | Simple à comprendre        | Devient confus quand le    |
+|                  |                            | domaine métier grandit     |
++------------------+----------------------------+----------------------------+
+| Testabilité      | Bonne pour l'UI            | Controllers souvent trop   |
+|                  |                            | couplés au framework       |
++------------------+----------------------------+----------------------------+
+| Pertinence       | Adapté aux applications    | NON ADAPTÉ seul pour une   |
+| projet           | web simples                | plateforme métier riche    |
++------------------+----------------------------+----------------------------+
+
++------------------+----------------------------+----------------------------+
+|                      ARCHITECTURE EN COUCHES                               |
++------------------+----------------------------+----------------------------+
+| Séparation       | Claire et intuitive        | Risque de "god services"   |
+| des rôles        | (Présentation/Métier/Data) | si mal découpé             |
++------------------+----------------------------+----------------------------+
+| Complexité       | Pédagogique, facile à      | Moins flexible si évolu-   |
+|                  | maintenir                  | tion vers distribué        |
++------------------+----------------------------+----------------------------+
+| Testabilité      | Excellente par couche      | Dépend de la qualité des   |
+|                  | (mocking facile)           | interfaces                 |
++------------------+----------------------------+----------------------------+
+| Pertinence       | ADAPTÉ pour un domaine     | Suffisant pour la          |
+| projet           | cohérent et maîtrisé       | volumétrie attendue        |
++------------------+----------------------------+----------------------------+
+
++------------------+----------------------------+----------------------------+
+|                              SOA                                           |
++------------------+----------------------------+----------------------------+
+| Séparation       | Services métier bien       | Complexité de communica-   |
+| des rôles        | délimités et autonomes     | tion inter-services        |
++------------------+----------------------------+----------------------------+
+| Complexité       | Adaptée aux grands SI      | Sur-ingénierie pour un     |
+|                  |                            | projet de cette taille     |
++------------------+----------------------------+----------------------------+
+| Testabilité      | Bonne par service          | Tests d'intégration plus   |
+|                  |                            | complexes                  |
++------------------+----------------------------+----------------------------+
+| Pertinence       | Adapté si plusieurs        | NON ADAPTÉ pour une        |
+| projet           | équipes / déploiements     | équipe réduite et un MVP   |
++------------------+----------------------------+----------------------------+
+
+Synthèse de l'analyse :
+- MVC : trop limité pour structurer l'ensemble du backend métier
+- SOA : complexité injustifiée pour le périmètre et les ressources actuels
+- Architecture en couches : équilibre optimal simplicité/structure
+
+--------------------------------------------------------------------------------
+4. STYLE ARCHITECTURAL RETENU
+--------------------------------------------------------------------------------
+
+    +================================================================+
+    |                                                                |
+    |   Le style architectural principal retenu pour ServiceHub      |
+    |   est un MONOLITHE MODULAIRE structuré en COUCHES.             |
+    |                                                                |
+    +================================================================+
+
+Description du style retenu :
+- MONOLITHE : une seule unité de déploiement (un conteneur backend)
+- MODULAIRE : découpage en modules métier isolés (Users, Tickets, Billing,
+              Reporting) avec couplage faible
+- EN COUCHES : chaque module respecte une architecture verticale :
+              Présentation (Controllers) -> Domaine (Services) ->
+              Infrastructure (Repositories)
+
+Alignement avec les vues 4+1 produites :
+
++------------------+-----------------------------------------------------------+
+| VUE              | ALIGNEMENT                                                |
++------------------+-----------------------------------------------------------+
+| Vue logique      | Les entités (User, Ticket, Invoice...) sont regroupées   |
+|                  | par domaine métier, reflétant le découpage modulaire      |
++------------------+-----------------------------------------------------------+
+| Vue développe-   | La structure /users, /tickets, /billing, /reporting       |
+| ment             | matérialise les modules. Chaque module a ses controllers, |
+|                  | services et repositories.                                 |
++------------------+-----------------------------------------------------------+
+| Vue processus    | Les flux (création ticket, authentification, facturation) |
+|                  | traversent les couches de manière prévisible :            |
+|                  | Controller -> Service -> Repository                       |
++------------------+-----------------------------------------------------------+
+| Vue déploiement  | Un seul conteneur backend (monolithe) simplifie           |
+|                  | l'infrastructure Docker                                   |
++------------------+-----------------------------------------------------------+
+| Vue scénarios    | Les cas d'usage sont mappés sur les modules métier        |
+|                  | correspondants (UC Tickets -> module Tickets)             |
++------------------+-----------------------------------------------------------+
+
+--------------------------------------------------------------------------------
+5. JUSTIFICATION MÉTIER
+--------------------------------------------------------------------------------
+
+1. COMPLEXITÉ DU DOMAINE MAÎTRISÉE
+   Le domaine métier (ticketing, facturation) est cohérent et bien délimité.
+   Les 4 domaines identifiés (Users, Tickets, Billing, Reporting) ont des
+   frontières claires et des interactions prévisibles.
+   -> Un monolithe modulaire suffit à encapsuler cette complexité.
+
+2. VOLUMÉTRIE ATTENDUE RAISONNABLE
+   Cible : quelques dizaines d'utilisateurs simultanés, quelques milliers de
+   tickets par mois. Cette volumétrie ne justifie pas une architecture
+   distribuée avec ses surcoûts.
+   -> Un monolithe performant répond aux besoins de charge.
+
+3. COÛT ET MAINTENANCE
+   Une équipe réduite (projet M2) doit pouvoir développer, tester et maintenir
+   l'application. Une architecture simple réduit le coût cognitif et les
+   risques d'erreur.
+   -> Monolithe = moins d'infrastructure, moins de complexité opérationnelle.
+
+4. CONTRAINTES DE DÉLAI
+   Le projet doit aboutir dans un cadre pédagogique contraint.
+   -> Éviter la sur-ingénierie permet de livrer un produit fonctionnel.
+
+--------------------------------------------------------------------------------
+6. JUSTIFICATION TECHNIQUE
+--------------------------------------------------------------------------------
+
+1. SIMPLICITÉ DE DÉVELOPPEMENT
+   NestJS favorise naturellement l'architecture modulaire en couches avec :
+   - Modules (@Module) pour le découpage fonctionnel
+   - Injection de dépendances pour le découplage
+   - Décorateurs pour la séparation des préoccupations
+   -> Le style choisi s'aligne parfaitement avec le framework.
+
+2. TESTABILITÉ EXCELLENTE
+   L'architecture en couches permet :
+   - Tests unitaires des services avec mocking des repositories
+   - Tests d'intégration par module
+   - Tests E2E sur l'API complète
+   -> Pattern Repository = couche données facilement mockable.
+
+3. DÉPLOIEMENT SIMPLIFIÉ
+   Un seul artefact à construire, déployer et monitorer :
+   - Un Dockerfile, un conteneur
+   - Pas d'orchestration complexe (Kubernetes non nécessaire)
+   - CI/CD simple (build -> test -> deploy)
+   -> Réduction du risque opérationnel.
+
+4. SCALABILITÉ SUFFISANTE
+   Le monolithe peut scaler verticalement (plus de ressources) ou être
+   répliqué horizontalement (plusieurs instances derrière un load balancer).
+   -> Pour la volumétrie cible, c'est largement suffisant.
+
+5. COHÉRENCE AVEC L'EXISTANT
+   Le code déjà structuré en modules NestJS respecte ce pattern.
+   Le choix architectural valide et formalise l'organisation existante.
+   -> Pas de refactoring majeur nécessaire.
+
+--------------------------------------------------------------------------------
+7. LIMITES ET ÉVOLUTIONS POSSIBLES
+--------------------------------------------------------------------------------
+
+LIMITES IDENTIFIÉES :
+
+1. Scalabilité plafonnée
+   Si la volumétrie explose (centaines de milliers d'utilisateurs), le
+   monolithe pourrait devenir un goulot d'étranglement.
+
+2. Déploiement atomique
+   Toute modification nécessite de redéployer l'ensemble de l'application,
+   même pour un changement mineur dans un module.
+
+3. Base de code croissante
+   Au-delà d'une certaine taille, la navigation dans le code peut devenir
+   difficile sans outils et conventions strictes.
+
+ÉVOLUTIONS ENVISAGEABLES :
+
+1. Extraction de services si nécessaire
+   Si le module Reporting devient très sollicité, il pourrait être extrait
+   en microservice avec sa propre base de données (CQRS).
+
+2. Ajout d'une file de messages
+   Pour les traitements asynchrones (notifications, exports), intégration
+   possible d'un broker de messages (RabbitMQ, Redis).
+
+3. Scaling horizontal
+   Ajout d'un load balancer (Nginx, Traefik) devant plusieurs instances
+   du backend si la charge augmente.
+
+4. Migration progressive vers microservices
+   Le découpage modulaire actuel facilite une éventuelle extraction future
+   des modules en services autonomes, sans refonte majeure.
+
+================================================================================
+                              SYNTHÈSE DÉCISIONNELLE
+================================================================================
+
++--------------------+--------------------------------------------------------+
+| Question           | Réponse                                                |
++--------------------+--------------------------------------------------------+
+| Style retenu       | Monolithe modulaire en couches                         |
++--------------------+--------------------------------------------------------+
+| Pourquoi pas MVC   | Insuffisant pour structurer un backend métier riche    |
+| seul ?             |                                                        |
++--------------------+--------------------------------------------------------+
+| Pourquoi pas SOA ? | Complexité injustifiée pour l'équipe et le périmètre   |
++--------------------+--------------------------------------------------------+
+| Argument métier    | Domaine cohérent, volumétrie maîtrisée, coûts réduits  |
+| principal          |                                                        |
++--------------------+--------------------------------------------------------+
+| Argument technique | Alignement NestJS, testabilité, déploiement simple     |
+| principal          |                                                        |
++--------------------+--------------------------------------------------------+
+| Évolution possible | Extraction de microservices si besoin futur            |
++--------------------+--------------------------------------------------------+
+
+================================================================================
+                              LIVRABLES SÉANCE 4
+================================================================================
+
+[X] Document de justification du style architectural (ce document)
+[X] Comparaison des styles envisagés (MVC / Couches / SOA)
+[X] Choix du style principal clairement énoncé
+[X] Justification métier (4 arguments)
+[X] Justification technique (5 arguments)
+[X] Limites et évolutions identifiées
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 18/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================

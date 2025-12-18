@@ -1,3 +1,5 @@
+export * from './base-repository.interface';
+
 export interface PaginationParams {
   page?: number;
   limit?: number;

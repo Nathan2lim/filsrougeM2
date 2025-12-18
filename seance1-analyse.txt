@@ -1,0 +1,135 @@
+================================================================================
+                    SÉANCE 1 - LANCEMENT DU PROJET & QUALITÉ LOGICIELLE
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. OBJECTIF PROJET
+--------------------------------------------------------------------------------
+
+Le projet ServiceHub est une plateforme de gestion de services permettant de
+centraliser la relation client, le suivi des interventions et la facturation.
+
+Contexte métier :
+- Entreprise de services B2B nécessitant un outil de ticketing
+- Besoin de traçabilité des demandes clients
+- Automatisation de la facturation liée aux interventions
+- Reporting pour le pilotage de l'activité
+
+--------------------------------------------------------------------------------
+2. BESOINS FONCTIONNELS IDENTIFIÉS
+--------------------------------------------------------------------------------
+
+GESTION DES UTILISATEURS :
+- Authentification sécurisée (email/mot de passe)
+- Gestion des rôles et permissions
+- Profils utilisateurs (clients, techniciens, administrateurs)
+- Activation/désactivation des comptes
+
+GESTION DES TICKETS :
+- Création de tickets avec référence unique (TKT-YYYYMMDD-XXXX)
+- Attribution des tickets aux techniciens
+- Suivi des statuts (ouvert, en cours, en attente, résolu, fermé)
+- Gestion des priorités (basse, moyenne, haute, critique)
+- Système de commentaires (internes et publics)
+- Pièces jointes
+
+FACTURATION :
+- Génération de factures avec référence unique (INV-YYYYMMDD-XXXX)
+- Lignes de facture liées aux tickets
+- Calcul automatique TVA et totaux
+- Suivi des statuts de paiement
+- Enregistrement des paiements (CB, virement, chèque, espèces)
+
+REPORTING :
+- Statistiques sur les tickets (volume, temps de résolution)
+- Suivi du chiffre d'affaires
+- Tableaux de bord
+
+--------------------------------------------------------------------------------
+3. BLOCS MÉTIERS (DOMAINES)
+--------------------------------------------------------------------------------
+
++------------------+----------------------------------------------------------+
+| DOMAINE          | DESCRIPTION                                              |
++------------------+----------------------------------------------------------+
+| UTILISATEURS     | Gestion des identités, authentification, rôles et        |
+| (Users)          | permissions. Entités : User, Role                        |
++------------------+----------------------------------------------------------+
+| TICKETS          | Coeur métier - gestion des demandes et interventions.    |
+| (Tickets)        | Entités : Ticket, TicketComment, Attachment              |
+|                  | Statuts : OPEN, IN_PROGRESS, WAITING_CLIENT,             |
+|                  |           WAITING_INTERNAL, RESOLVED, CLOSED, CANCELLED  |
+|                  | Priorités : LOW, MEDIUM, HIGH, CRITICAL                  |
++------------------+----------------------------------------------------------+
+| FACTURATION      | Gestion financière liée aux interventions.               |
+| (Billing)        | Entités : Invoice, InvoiceLine, Payment                  |
+|                  | Statuts facture : DRAFT, SENT, PAID, PARTIALLY_PAID,     |
+|                  |                   OVERDUE, CANCELLED                     |
+|                  | Moyens de paiement : CREDIT_CARD, BANK_TRANSFER,         |
+|                  |                      CHECK, CASH, OTHER                  |
++------------------+----------------------------------------------------------+
+| REPORTING        | Agrégation et visualisation des données métier.          |
+| (Reporting)      | KPIs, statistiques, tableaux de bord                     |
++------------------+----------------------------------------------------------+
+
+--------------------------------------------------------------------------------
+4. ARCHITECTURE TECHNIQUE
+--------------------------------------------------------------------------------
+
+Stack technique identifiée :
+- Backend : NestJS (Node.js/TypeScript)
+- Base de données : PostgreSQL
+- ORM : Prisma
+- Conteneurisation : Docker / Docker Compose
+- Architecture : Clean Architecture (Controllers, Services, Repositories)
+
+Organisation du code :
+/backend
+  /src
+    /users      -> Module Utilisateurs
+    /tickets    -> Module Tickets
+    /billing    -> Module Facturation
+    /reporting  -> Module Reporting (à développer)
+    /common     -> Utilitaires partagés (guards, filters, interceptors)
+    /config     -> Configuration
+    /prisma     -> Service Prisma
+
+--------------------------------------------------------------------------------
+5. LIVRABLES SÉANCE 1
+--------------------------------------------------------------------------------
+
+[X] Document d'analyse fonctionnelle simplifiée (ce document)
+[X] Liste des blocs métiers :
+    1. Utilisateurs (Users)
+    2. Tickets
+    3. Facturation (Billing)
+    4. Reporting
+
+--------------------------------------------------------------------------------
+6. RELATIONS ENTRE DOMAINES
+--------------------------------------------------------------------------------
+
+                        +----------------+
+                        |  UTILISATEURS  |
+                        +----------------+
+                              |    |
+              créé par/       |    |       créé par
+              assigné à       |    |
+                        +-----+    +-----+
+                        |                |
+                        v                v
+                  +-----------+    +-------------+
+                  |  TICKETS  |--->| FACTURATION |
+                  +-----------+    +-------------+
+                        |                |
+                        v                v
+                  +---------------------------+
+                  |        REPORTING          |
+                  +---------------------------+
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 15/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================

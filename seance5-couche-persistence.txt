@@ -1,0 +1,351 @@
+================================================================================
+                    SÉANCE 5 - COUCHE DE PERSISTENCE
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. OBJECTIF
+--------------------------------------------------------------------------------
+
+Découpler la couche métier (Services) de la couche de stockage (Base de données)
+en introduisant une abstraction via le pattern Repository.
+
+Bénéfices attendus :
+- Indépendance vis-à-vis de la technologie de stockage (Prisma, TypeORM, etc.)
+- Testabilité améliorée (possibilité d'utiliser des mocks ou implémentations In-Memory)
+- Respect du principe d'inversion de dépendances (SOLID - D)
+- Flexibilité pour changer d'implémentation sans impacter le métier
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURE DE LA COUCHE PERSISTENCE
+--------------------------------------------------------------------------------
+
+                    +----------------------------------+
+                    |         COUCHE MÉTIER            |
+                    |          (Services)              |
+                    +----------------------------------+
+                                   |
+                                   | Dépend de l'interface
+                                   v
+                    +----------------------------------+
+                    |     INTERFACES REPOSITORY        |
+                    |  (IUsersRepository, ITickets...) |
+                    +----------------------------------+
+                           /              \
+                          /                \
+                         v                  v
+          +--------------------+    +--------------------+
+          |   IMPLÉMENTATION   |    |   IMPLÉMENTATION   |
+          |      PRISMA        |    |     IN-MEMORY      |
+          | (UsersRepository)  |    | (UsersRepository   |
+          |                    |    |     InMemory)      |
+          +--------------------+    +--------------------+
+                   |
+                   v
+          +--------------------+
+          |    BASE DE DONNÉES |
+          |    (PostgreSQL)    |
+          +--------------------+
+
+--------------------------------------------------------------------------------
+3. INTERFACES DAO / REPOSITORY CRÉÉES
+--------------------------------------------------------------------------------
+
+3.1 INTERFACE GÉNÉRIQUE DE BASE
+--------------------------------------------------------------------------------
+
+Fichier : src/common/interfaces/base-repository.interface.ts
+
++------------------------------------------------------------------+
+| IBaseRepository<T, CreateDto, UpdateDto>                         |
++------------------------------------------------------------------+
+| + create(data: CreateDto): Promise<T>                            |
+| + findById(id: string): Promise<T | null>                        |
+| + findMany(options: FindManyOptions): Promise<T[]>               |
+| + count(where?: Record<string, unknown>): Promise<number>        |
+| + update(id: string, data: UpdateDto): Promise<T>                |
+| + delete(id: string): Promise<void>                              |
++------------------------------------------------------------------+
+
+Interfaces complémentaires :
+- IRepositoryWithReference<T> : pour les entités avec référence métier
+- IRepositoryWithDailyCount : pour les comptages journaliers
+
+3.2 INTERFACE USERS REPOSITORY
+--------------------------------------------------------------------------------
+
+Fichier : src/users/repositories/users.repository.interface.ts
+
++------------------------------------------------------------------+
+| IUsersRepository                                                 |
++------------------------------------------------------------------+
+| + create(data): Promise<UserWithRole>                            |
+| + findById(id: string): Promise<UserWithRole | null>             |
+| + findByEmail(email: string): Promise<UserWithRole | null>       |
+| + findMany(options): Promise<UserWithRole[]>                     |
+| + count(where?): Promise<number>                                 |
+| + update(id: string, data): Promise<UserWithRole>                |
+| + delete(id: string): Promise<void>                              |
+| + findRoleByName(name: string): Promise<Role | null>             |
+| + findAllRoles(): Promise<Role[]>                                |
++------------------------------------------------------------------+
+
+3.3 INTERFACE TICKETS REPOSITORY
+--------------------------------------------------------------------------------
+
+Fichier : src/tickets/repositories/tickets.repository.interface.ts
+
++------------------------------------------------------------------+
+| ITicketsRepository                                               |
++------------------------------------------------------------------+
+| + create(data): Promise<TicketWithRelations>                     |
+| + findById(id: string): Promise<TicketWithRelations | null>      |
+| + findByReference(reference: string): Promise<...>               |
+| + findMany(options): Promise<TicketWithRelations[]>              |
+| + count(where?): Promise<number>                                 |
+| + countToday(): Promise<number>                                  |
+| + update(id: string, data): Promise<TicketWithRelations>         |
+| + delete(id: string): Promise<void>                              |
+| + addComment(ticketId, data): Promise<TicketComment>             |
++------------------------------------------------------------------+
+
+3.4 INTERFACE INVOICES REPOSITORY
+--------------------------------------------------------------------------------
+
+Fichier : src/billing/repositories/invoices.repository.interface.ts
+
++------------------------------------------------------------------+
+| IInvoicesRepository                                              |
++------------------------------------------------------------------+
+| + create(data): Promise<InvoiceWithRelations>                    |
+| + findById(id: string): Promise<InvoiceWithRelations | null>     |
+| + findByReference(reference: string): Promise<...>               |
+| + findMany(options): Promise<InvoiceWithRelations[]>             |
+| + count(where?): Promise<number>                                 |
+| + countToday(): Promise<number>                                  |
+| + sumTotal(where?): Promise<number>                              |
+| + update(id: string, data): Promise<InvoiceWithRelations>        |
+| + delete(id: string): Promise<void>                              |
+| + addPayment(invoiceId, data): Promise<Payment>                  |
+| + getPayments(invoiceId): Promise<Payment[]>                     |
+| + findPaymentById(id: string): Promise<Payment | null>           |
+| + findManyPayments(options): Promise<Payment[]>                  |
+| + countPayments(where?): Promise<number>                         |
++------------------------------------------------------------------+
+
+--------------------------------------------------------------------------------
+4. IMPLÉMENTATIONS CRÉÉES
+--------------------------------------------------------------------------------
+
+Pour chaque interface, deux implémentations ont été créées :
+
++------------------+---------------------------+---------------------------+
+| MODULE           | IMPLÉMENTATION PRISMA     | IMPLÉMENTATION IN-MEMORY  |
++------------------+---------------------------+---------------------------+
+| Users            | UsersRepository           | UsersRepositoryInMemory   |
+|                  | (Production)              | (Tests/Dev)               |
++------------------+---------------------------+---------------------------+
+| Tickets          | TicketsRepository         | TicketsRepositoryInMemory |
+|                  | (Production)              | (Tests/Dev)               |
++------------------+---------------------------+---------------------------+
+| Billing          | InvoicesRepository        | InvoicesRepositoryInMemory|
+|                  | (Production)              | (Tests/Dev)               |
++------------------+---------------------------+---------------------------+
+
+4.1 IMPLÉMENTATION PRISMA (PRODUCTION)
+--------------------------------------------------------------------------------
+
+Caractéristiques :
+- Utilise PrismaService pour accéder à PostgreSQL
+- Gère les relations (include) automatiquement
+- Supporte les transactions ACID
+- Optimisé pour la performance en production
+
+Exemple d'utilisation :
+```typescript
+@Injectable()
+export class UsersRepository implements IUsersRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findById(id: string): Promise<UserWithRole | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+  }
+}
+```
+
+4.2 IMPLÉMENTATION IN-MEMORY (TESTS/DÉVELOPPEMENT)
+--------------------------------------------------------------------------------
+
+Caractéristiques :
+- Stockage en mémoire via Map<string, Entity>
+- Génération d'UUID pour les identifiants
+- Simulation complète des opérations CRUD
+- Méthode clear() pour réinitialiser entre les tests
+- Aucune dépendance à une base de données
+
+Exemple d'utilisation :
+```typescript
+@Injectable()
+export class UsersRepositoryInMemory implements IUsersRepository {
+  private users: Map<string, UserWithRole> = new Map();
+
+  async findById(id: string): Promise<UserWithRole | null> {
+    return this.users.get(id) || null;
+  }
+
+  clear(): void {
+    this.users.clear();
+  }
+}
+```
+
+--------------------------------------------------------------------------------
+5. INJECTION DE DÉPENDANCES
+--------------------------------------------------------------------------------
+
+L'injection est configurée dans les modules NestJS via des tokens :
+
+```typescript
+@Module({
+  providers: [
+    UsersService,
+    {
+      provide: 'IUsersRepository',        // Token d'injection
+      useClass: UsersRepository,          // Implémentation Prisma (prod)
+      // useClass: UsersRepositoryInMemory // Implémentation In-Memory (test)
+    },
+  ],
+})
+export class UsersModule {}
+```
+
+Utilisation dans les services :
+
+```typescript
+@Injectable()
+export class UsersService {
+  constructor(
+    @Inject('IUsersRepository')
+    private readonly usersRepository: IUsersRepository,
+  ) {}
+}
+```
+
+--------------------------------------------------------------------------------
+6. CHANGEMENT D'IMPLÉMENTATION
+--------------------------------------------------------------------------------
+
+Pour basculer entre les implémentations (ex: pour les tests) :
+
+MÉTHODE 1 : Modification directe du module
+```typescript
+{
+  provide: 'IUsersRepository',
+  useClass: process.env.NODE_ENV === 'test'
+    ? UsersRepositoryInMemory
+    : UsersRepository,
+}
+```
+
+MÉTHODE 2 : Override dans les tests
+```typescript
+const moduleRef = await Test.createTestingModule({
+  imports: [UsersModule],
+})
+.overrideProvider('IUsersRepository')
+.useClass(UsersRepositoryInMemory)
+.compile();
+```
+
+MÉTHODE 3 : Factory avec configuration
+```typescript
+{
+  provide: 'IUsersRepository',
+  useFactory: (config: ConfigService, prisma: PrismaService) => {
+    if (config.get('USE_INMEMORY_DB')) {
+      return new UsersRepositoryInMemory();
+    }
+    return new UsersRepository(prisma);
+  },
+  inject: [ConfigService, PrismaService],
+}
+```
+
+--------------------------------------------------------------------------------
+7. STRUCTURE DES FICHIERS CRÉÉS
+--------------------------------------------------------------------------------
+
+/backend/src
+│
+├── /common
+│   └── /interfaces
+│       ├── base-repository.interface.ts    # Interface générique
+│       └── index.ts                         # Export
+│
+├── /users
+│   └── /repositories
+│       ├── users.repository.interface.ts    # Interface Users
+│       ├── users.repository.ts              # Implémentation Prisma
+│       ├── users.repository.in-memory.ts    # Implémentation In-Memory
+│       └── index.ts                         # Export
+│
+├── /tickets
+│   └── /repositories
+│       ├── tickets.repository.interface.ts  # Interface Tickets
+│       ├── tickets.repository.ts            # Implémentation Prisma
+│       ├── tickets.repository.in-memory.ts  # Implémentation In-Memory
+│       └── index.ts                         # Export
+│
+└── /billing
+    └── /repositories
+        ├── invoices.repository.interface.ts # Interface Invoices
+        ├── invoices.repository.ts           # Implémentation Prisma
+        ├── invoices.repository.in-memory.ts # Implémentation In-Memory
+        └── index.ts                         # Export
+
+--------------------------------------------------------------------------------
+8. AVANTAGES DE CETTE ARCHITECTURE
+--------------------------------------------------------------------------------
+
+1. DÉCOUPLAGE MÉTIER / STOCKAGE
+   Les services ne connaissent que l'interface, pas l'implémentation.
+   Changement de base de données = modification uniquement du repository.
+
+2. TESTABILITÉ
+   Tests unitaires rapides avec implémentation In-Memory.
+   Pas besoin de base de données pour tester la logique métier.
+
+3. FLEXIBILITÉ
+   Possibilité d'ajouter de nouvelles implémentations :
+   - TypeORM, Mongoose, fichiers JSON, API externe, etc.
+
+4. RESPECT DES PRINCIPES SOLID
+   - S : Chaque repository a une responsabilité unique
+   - O : Ouvert à l'extension (nouvelles implémentations)
+   - L : Substitution (In-Memory <-> Prisma)
+   - I : Interfaces spécifiques par domaine
+   - D : Dépendance vers les abstractions (interfaces)
+
+5. MAINTENABILITÉ
+   Code organisé par domaine métier.
+   Chaque module est autonome et testable indépendamment.
+
+================================================================================
+                              LIVRABLES SÉANCE 5
+================================================================================
+
+[X] Interface générique IBaseRepository
+[X] Interfaces spécifiques par domaine (Users, Tickets, Billing)
+[X] Implémentations Prisma (production)
+[X] Implémentations In-Memory (simulation stockage)
+[X] Fichiers d'index pour les exports
+[X] Documentation de la couche persistence (ce document)
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 18/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================

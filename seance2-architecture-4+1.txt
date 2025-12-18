@@ -1,0 +1,547 @@
+================================================================================
+                    SÉANCE 2 - ARCHITECTURE LOGICIELLE 4+1
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. OBJECTIF
+--------------------------------------------------------------------------------
+
+- Structurer l'architecture globale du système
+- Comprendre les interactions entre les couches
+- Documenter les choix architecturaux selon le modèle 4+1 de Kruchten
+
+--------------------------------------------------------------------------------
+2. MODÈLE 4+1 DE KRUCHTEN - VUE D'ENSEMBLE
+--------------------------------------------------------------------------------
+
+                              +------------------+
+                              |   VUE SCÉNARIOS  |
+                              |   (Cas d'usage)  |
+                              +------------------+
+                                      |
+            +-------------------------+-------------------------+
+            |                         |                         |
+            v                         v                         v
+    +---------------+         +---------------+         +---------------+
+    |  VUE LOGIQUE  |         |VUE PROCESSUS  |         |VUE PHYSIQUE   |
+    | (Fonctionnel) |         | (Dynamique)   |         | (Déploiement) |
+    +---------------+         +---------------+         +---------------+
+            |                         |                         |
+            +-------------------------+-------------------------+
+                                      |
+                                      v
+                            +------------------+
+                            |VUE DÉVELOPPEMENT |
+                            |  (Composants)    |
+                            +------------------+
+
+================================================================================
+                         VUE 1 : VUE LOGIQUE + MCD
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 DIAGRAMME DE CLASSES SIMPLIFIÉ
+--------------------------------------------------------------------------------
+
++------------------+       +------------------+
+|       User       |       |       Role       |
++------------------+       +------------------+
+| - id: UUID       |       | - id: UUID       |
+| - email: String  |*-----1| - name: String   |
+| - password: Hash |       | - description    |
+| - firstName      |       | - permissions[]  |
+| - lastName       |       +------------------+
+| - isActive       |
++------------------+
+        |1
+        |
+        | créé par / assigné à
+        |
+        |*
++------------------+       +------------------+
+|      Ticket      |       | TicketComment    |
++------------------+       +------------------+
+| - id: UUID       |1-----*| - id: UUID       |
+| - reference      |       | - content        |
+| - title          |       | - isInternal     |
+| - description    |       | - authorId       |
+| - status: Enum   |       +------------------+
+| - priority: Enum |
+| - dueDate        |       +------------------+
+| - resolvedAt     |       |   Attachment     |
++------------------+       +------------------+
+        |1                 | - id: UUID       |
+        |                  | - filename       |
+        +-----------------*| - path           |
+        |                  | - mimeType       |
+        |                  | - size           |
+        |                  +------------------+
+        |
+        | lié à (optionnel)
+        |*
++------------------+       +------------------+
+|     Invoice      |       |   InvoiceLine    |
++------------------+       +------------------+
+| - id: UUID       |1-----*| - id: UUID       |
+| - reference      |       | - description    |
+| - status: Enum   |       | - quantity       |
+| - issueDate      |       | - unitPrice      |
+| - dueDate        |       | - total          |
+| - subtotal       |       | - ticketId (FK)  |
+| - taxRate        |       +------------------+
+| - taxAmount      |
+| - total          |       +------------------+
+| - notes          |       |     Payment      |
++------------------+       +------------------+
+        |1                 | - id: UUID       |
+        +-----------------*| - amount         |
+                           | - method: Enum   |
+                           | - reference      |
+                           | - paidAt         |
+                           +------------------+
+
+--------------------------------------------------------------------------------
+3.2 MCD (MODÈLE CONCEPTUEL DE DONNÉES)
+--------------------------------------------------------------------------------
+
+    USER -----(1,n)----< POSSÈDE >----(1,1)----- ROLE
+      |
+      |----(0,n)----< CRÉE >-------(1,1)----- TICKET
+      |----(0,n)----< ASSIGNÉ À >--(0,1)----- TICKET
+      |----(0,n)----< RÉDIGE >-----(1,1)----- COMMENT
+      |----(0,n)----< CRÉE >-------(1,1)----- INVOICE
+
+    TICKET ----(0,n)----< CONTIENT >--(1,1)----- COMMENT
+           |---(0,n)----< CONTIENT >--(1,1)----- ATTACHMENT
+           |---(0,n)----< FACTURÉ >---(0,1)----- INVOICE_LINE
+
+    INVOICE ---(1,n)----< COMPOSE >---(1,1)----- INVOICE_LINE
+            |--(0,n)----< REÇOIT >----(1,1)----- PAYMENT
+
+--------------------------------------------------------------------------------
+3.3 ÉNUMÉRATIONS
+--------------------------------------------------------------------------------
+
+TicketStatus:                    TicketPriority:
++------------------------+       +------------------------+
+| OPEN                   |       | LOW                    |
+| IN_PROGRESS            |       | MEDIUM                 |
+| WAITING_CLIENT         |       | HIGH                   |
+| WAITING_INTERNAL       |       | CRITICAL               |
+| RESOLVED               |       +------------------------+
+| CLOSED                 |
+| CANCELLED              |       PaymentMethod:
++------------------------+       +------------------------+
+                                 | CREDIT_CARD            |
+InvoiceStatus:                   | BANK_TRANSFER          |
++------------------------+       | CHECK                  |
+| DRAFT                  |       | CASH                   |
+| SENT                   |       | OTHER                  |
+| PAID                   |       +------------------------+
+| PARTIALLY_PAID         |
+| OVERDUE                |
+| CANCELLED              |
++------------------------+
+
+================================================================================
+                      VUE 2 : VUE DE DÉVELOPPEMENT
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 ARCHITECTURE EN COUCHES (CLEAN ARCHITECTURE)
+--------------------------------------------------------------------------------
+
++-------------------------------------------------------------------------+
+|                           PRÉSENTATION (API)                            |
+|   Controllers - DTOs - Validation - Swagger                             |
++-------------------------------------------------------------------------+
+                                    |
+                                    v
++-------------------------------------------------------------------------+
+|                          DOMAINE (MÉTIER)                               |
+|   Services - Entities - Interfaces - Business Rules                     |
++-------------------------------------------------------------------------+
+                                    |
+                                    v
++-------------------------------------------------------------------------+
+|                      INFRASTRUCTURE (DONNÉES)                           |
+|   Repositories - Prisma - Database Access                               |
++-------------------------------------------------------------------------+
+                                    |
+                                    v
++-------------------------------------------------------------------------+
+|                         BASE DE DONNÉES                                 |
+|   PostgreSQL                                                            |
++-------------------------------------------------------------------------+
+
+--------------------------------------------------------------------------------
+4.2 STRUCTURE DES MODULES NESTJS
+--------------------------------------------------------------------------------
+
+/backend/src
+│
+├── /common                    # Module transverse
+│   ├── /decorators           # Décorateurs personnalisés
+│   ├── /exceptions           # Exceptions métier
+│   ├── /filters              # Filtres d'exception HTTP
+│   ├── /guards               # Guards (Auth, Roles)
+│   ├── /interceptors         # Interceptors (Logging, Transform)
+│   ├── /interfaces           # Interfaces partagées
+│   ├── /pipes                # Pipes de validation
+│   └── /utils                # Utilitaires
+│
+├── /config                    # Configuration
+│   ├── app.config.ts
+│   └── database.config.ts
+│
+├── /prisma                    # Module Prisma
+│   ├── prisma.module.ts
+│   └── prisma.service.ts
+│
+├── /users                     # Module Utilisateurs
+│   ├── /controllers          # UsersController, AuthController
+│   ├── /services             # AuthService
+│   ├── /repositories         # UsersRepository
+│   ├── /dto                  # CreateUserDto, LoginDto, etc.
+│   ├── /entities             # User, Role
+│   └── /interfaces           # IUser
+│
+├── /tickets                   # Module Tickets
+│   ├── /controllers          # TicketsController
+│   ├── /repositories         # TicketsRepository
+│   ├── /dto                  # CreateTicketDto, UpdateTicketDto
+│   ├── /entities             # Ticket, Comment, Attachment
+│   ├── /enums                # TicketStatus, TicketPriority
+│   └── /interfaces           # ITicket
+│
+├── /billing                   # Module Facturation
+│   ├── /controllers          # InvoicesController, PaymentsController
+│   ├── /services             # InvoicesService, PaymentsService
+│   ├── /repositories         # InvoicesRepository
+│   ├── /dto                  # CreateInvoiceDto, CreatePaymentDto
+│   ├── /entities             # Invoice, InvoiceLine, Payment
+│   └── /interfaces           # IBilling
+│
+├── /reporting                 # Module Reporting
+│   ├── /controllers          # ReportingController
+│   ├── /services             # ReportingService
+│   └── /dto                  # ReportFiltersDto
+│
+├── app.module.ts              # Module racine
+└── main.ts                    # Point d'entrée
+
+--------------------------------------------------------------------------------
+4.3 DÉPENDANCES ENTRE MODULES
+--------------------------------------------------------------------------------
+
+                         +-------------+
+                         | AppModule   |
+                         +-------------+
+                                |
+        +-----------+-----------+-----------+-----------+
+        |           |           |           |           |
+        v           v           v           v           v
+  +---------+ +---------+ +---------+ +---------+ +---------+
+  | Common  | | Prisma  | | Users   | | Tickets | | Billing |
+  | Module  | | Module  | | Module  | | Module  | | Module  |
+  +---------+ +---------+ +---------+ +---------+ +---------+
+        |           |           |           |           |
+        +-----------+-----------+-----------+-----------+
+                                |
+                                v
+                         +-----------+
+                         | Reporting |
+                         |  Module   |
+                         +-----------+
+
+================================================================================
+                       VUE 3 : VUE DES PROCESSUS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 FLUX DE CRÉATION D'UN TICKET
+--------------------------------------------------------------------------------
+
+Client           API Gateway        TicketController      TicketService      DB
+   |                  |                    |                    |             |
+   |---POST /tickets->|                    |                    |             |
+   |                  |--validateJWT------>|                    |             |
+   |                  |                    |--createTicket----->|             |
+   |                  |                    |                    |--INSERT---->|
+   |                  |                    |                    |<---OK-------|
+   |                  |                    |<---ticketCreated---|             |
+   |                  |<---201 Created-----|                    |             |
+   |<--ticket data----|                    |                    |             |
+
+--------------------------------------------------------------------------------
+5.2 FLUX D'AUTHENTIFICATION
+--------------------------------------------------------------------------------
+
+Client           AuthController       AuthService        UsersRepository     DB
+   |                  |                    |                    |             |
+   |---POST /login--->|                    |                    |             |
+   |                  |--validateLogin---->|                    |             |
+   |                  |                    |--findByEmail------>|             |
+   |                  |                    |                    |--SELECT---->|
+   |                  |                    |                    |<---user-----|
+   |                  |                    |--verifyPassword--->|             |
+   |                  |                    |--generateJWT------>|             |
+   |                  |<---token-----------|                    |             |
+   |<--200 + JWT------|                    |                    |             |
+
+--------------------------------------------------------------------------------
+5.3 FLUX DE FACTURATION
+--------------------------------------------------------------------------------
+
+Admin         InvoiceController    InvoiceService    BillingCalculator     DB
+   |                  |                    |                    |           |
+   |--POST /invoices->|                    |                    |           |
+   |                  |--createInvoice---->|                    |           |
+   |                  |                    |--calculateTotals-->|           |
+   |                  |                    |<---totals----------|           |
+   |                  |                    |--saveInvoice------------------>|
+   |                  |                    |<---invoiceId-------------------|
+   |                  |<---invoice---------|                    |           |
+   |<--201 Created----|                    |                    |           |
+
+--------------------------------------------------------------------------------
+5.4 CYCLE DE VIE D'UN TICKET
+--------------------------------------------------------------------------------
+
+    [OPEN] -----> [IN_PROGRESS] -----> [RESOLVED] -----> [CLOSED]
+      |               |                     |
+      |               v                     |
+      |        [WAITING_CLIENT]             |
+      |               |                     |
+      |               v                     |
+      |        [WAITING_INTERNAL]           |
+      |               |                     |
+      v               v                     v
+ [CANCELLED] <---------------------------------
+
+================================================================================
+                      VUE 4 : VUE DE DÉPLOIEMENT
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 ARCHITECTURE DE DÉPLOIEMENT (DOCKER)
+--------------------------------------------------------------------------------
+
++------------------------------------------------------------------+
+|                        SERVEUR HÔTE                              |
+|                                                                  |
+|  +---------------------------+  +---------------------------+    |
+|  |   servicehub-backend      |  |   servicehub-postgres     |    |
+|  |   (Container NestJS)      |  |   (Container PostgreSQL)  |    |
+|  |                           |  |                           |    |
+|  |   - Node.js 20            |  |   - PostgreSQL 16         |    |
+|  |   - NestJS                |  |   - Alpine Linux          |    |
+|  |   - Prisma Client         |  |                           |    |
+|  |                           |  |   Volume:                 |    |
+|  |   Port: 3000              |  |   postgres_data_prod      |    |
+|  +---------------------------+  +---------------------------+    |
+|              |                              |                    |
+|              +--------- Bridge Network -----+                    |
+|                   (servicehub-network-prod)                      |
+|                                                                  |
++------------------------------------------------------------------+
+              |
+              | Port 3000 exposé
+              v
+        +------------+
+        |  Internet  |
+        |  (Clients) |
+        +------------+
+
+--------------------------------------------------------------------------------
+6.2 CONFIGURATION DES SERVICES
+--------------------------------------------------------------------------------
+
+SERVICE: postgres
++----------------------------------+
+| Image: postgres:16-alpine        |
+| Container: servicehub-postgres   |
+| Restart: always                  |
+| Healthcheck: pg_isready          |
+| Network: servicehub-network-prod |
+| Volume: postgres_data_prod       |
++----------------------------------+
+
+SERVICE: backend
++----------------------------------+
+| Build: ./backend/Dockerfile      |
+| Container: servicehub-backend    |
+| Restart: always                  |
+| Port: 3000:3000                  |
+| Depends on: postgres (healthy)   |
+| Network: servicehub-network-prod |
++----------------------------------+
+
+--------------------------------------------------------------------------------
+6.3 VARIABLES D'ENVIRONNEMENT
+--------------------------------------------------------------------------------
+
+Backend:
+- NODE_ENV=production
+- DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+- JWT_SECRET=${JWT_SECRET}
+- JWT_EXPIRATION=${JWT_EXPIRATION}
+- PORT=3000
+
+PostgreSQL:
+- POSTGRES_USER=${DB_USER}
+- POSTGRES_PASSWORD=${DB_PASSWORD}
+- POSTGRES_DB=${DB_NAME}
+
+================================================================================
+                      VUE 5 : VUE SCÉNARIOS (CAS D'USAGE)
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 ACTEURS DU SYSTÈME
+--------------------------------------------------------------------------------
+
++-------------+    +-------------+    +-------------+
+|   CLIENT    |    | TECHNICIEN  |    |    ADMIN    |
++-------------+    +-------------+    +-------------+
+      |                  |                  |
+      |  - Créer ticket  |  - Voir tickets |  - Gérer users
+      |  - Suivre ticket |  - Traiter      |  - Gérer rôles
+      |  - Commenter     |  - Commenter    |  - Facturer
+      |                  |  - Résoudre     |  - Reporting
+      +------------------+------------------+
+
+--------------------------------------------------------------------------------
+7.2 CAS D'USAGE PRINCIPAUX
+--------------------------------------------------------------------------------
+
+UC1: Créer un ticket
+    Acteur: Client
+    Précondition: Utilisateur authentifié
+    Scénario:
+    1. Client remplit le formulaire (titre, description, priorité)
+    2. Système génère une référence unique
+    3. Système crée le ticket avec statut OPEN
+    4. Client reçoit confirmation
+
+UC2: Traiter un ticket
+    Acteur: Technicien
+    Précondition: Ticket assigné au technicien
+    Scénario:
+    1. Technicien consulte le ticket
+    2. Technicien passe le statut à IN_PROGRESS
+    3. Technicien travaille sur la résolution
+    4. Technicien ajoute des commentaires
+    5. Technicien passe le statut à RESOLVED
+
+UC3: Générer une facture
+    Acteur: Admin
+    Précondition: Tickets à facturer
+    Scénario:
+    1. Admin sélectionne les tickets/interventions
+    2. Système calcule les montants (HT, TVA, TTC)
+    3. Admin valide la facture
+    4. Système génère la référence et enregistre
+
+UC4: Enregistrer un paiement
+    Acteur: Admin
+    Précondition: Facture envoyée
+    Scénario:
+    1. Admin sélectionne la facture
+    2. Admin saisit le montant et le mode de paiement
+    3. Système met à jour le statut de la facture
+    4. Si totalement payée -> statut PAID
+
+================================================================================
+                      JUSTIFICATION DES CHOIX
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 CHOIX TECHNOLOGIQUES
+--------------------------------------------------------------------------------
+
+NESTJS (Backend Framework)
+- Architecture modulaire native
+- Support TypeScript natif
+- Injection de dépendances intégrée
+- Écosystème riche (guards, interceptors, pipes)
+- Documentation Swagger automatique
+- Facilite l'application des principes SOLID
+
+POSTGRESQL (Base de données)
+- SGBD relationnel robuste et mature
+- Support des transactions ACID
+- Performances excellentes
+- Types de données riches (UUID, JSONB, Arrays)
+- Gratuit et open source
+
+PRISMA (ORM)
+- Type-safety avec TypeScript
+- Migrations automatiques
+- Client généré avec autocomplétion
+- Query builder intuitif
+- Support PostgreSQL natif
+
+DOCKER (Conteneurisation)
+- Environnement reproductible
+- Isolation des services
+- Facilité de déploiement
+- Scalabilité horizontale possible
+
+--------------------------------------------------------------------------------
+8.2 CHOIX ARCHITECTURAUX
+--------------------------------------------------------------------------------
+
+CLEAN ARCHITECTURE
+- Séparation claire des responsabilités
+- Testabilité améliorée
+- Indépendance des frameworks
+- Maintenance facilitée
+
+ARCHITECTURE MODULAIRE
+- Modules métier isolés (Users, Tickets, Billing, Reporting)
+- Couplage faible entre modules
+- Cohésion forte dans chaque module
+- Évolutivité facilitée
+
+PATTERN REPOSITORY
+- Abstraction de la couche de données
+- Facilite les tests unitaires (mocking)
+- Permet de changer d'ORM si nécessaire
+
+--------------------------------------------------------------------------------
+8.3 CHOIX DE MODÉLISATION
+--------------------------------------------------------------------------------
+
+UUID POUR LES IDENTIFIANTS
+- Pas de collision possible
+- Pas de séquence prévisible (sécurité)
+- Génération côté application possible
+
+RÉFÉRENCES MÉTIER (TKT-*, INV-*)
+- Lisibilité pour les utilisateurs
+- Traçabilité dans les échanges
+- Format standardisé
+
+SOFT DELETE IMPLICITE (isActive)
+- Conservation de l'historique
+- Conformité RGPD (désactivation vs suppression)
+- Intégrité référentielle préservée
+
+================================================================================
+                              LIVRABLES SÉANCE 2
+================================================================================
+
+[X] Vue logique + MCD
+[X] Vue de développement
+[X] Vue des processus
+[X] Vue de déploiement
+[X] Vue scénarios (bonus)
+[X] Justification des choix architecturaux
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 15/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================
