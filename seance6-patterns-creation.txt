@@ -1,0 +1,513 @@
+================================================================================
+                    SÉANCE 6 - PATTERNS DE CRÉATION
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. OBJECTIF
+--------------------------------------------------------------------------------
+
+Centraliser l'instanciation des objets métier en utilisant les design patterns
+de création du Gang of Four (GoF) :
+
+- FACTORY : Encapsuler la logique de création des entités
+- SINGLETON : Garantir une instance unique pour les services partagés
+- BUILDER : Permettre la construction fluide d'objets complexes
+
+Bénéfices attendus :
+- Code de création centralisé et réutilisable
+- Découplage entre l'utilisation et la création des objets
+- Facilité de test et de maintenance
+- Cohérence dans la génération des références métier
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURE DES PATTERNS
+--------------------------------------------------------------------------------
+
+                           +----------------------+
+                           |   EntityFactory      |
+                           |   (Factory Globale)  |
+                           +----------------------+
+                                     |
+            +------------------------+------------------------+
+            |                        |                        |
+            v                        v                        v
+    +---------------+       +----------------+       +---------------+
+    | TicketFactory |       | InvoiceFactory |       | UserFactory   |
+    +---------------+       +----------------+       +---------------+
+            |                        |
+            v                        v
+    +---------------+       +----------------+
+    | TicketBuilder |       | InvoiceBuilder |
+    +---------------+       +----------------+
+
+                    +------------------------+
+                    |      SINGLETONS        |
+                    +------------------------+
+                    | ReferenceGenerator     |
+                    | AppConfig              |
+                    +------------------------+
+
+================================================================================
+                         PATTERN 1 : FACTORY
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 CONCEPT
+--------------------------------------------------------------------------------
+
+Le pattern Factory encapsule la logique de création des objets, permettant :
+- De centraliser la génération des identifiants et références
+- D'appliquer les valeurs par défaut de manière cohérente
+- De créer des variantes d'objets (urgent, maintenance, etc.)
+
+--------------------------------------------------------------------------------
+3.2 TICKET FACTORY
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/factories/ticket.factory.ts
+
+Méthodes disponibles :
++---------------------------+------------------------------------------------+
+| Méthode                   | Description                                    |
++---------------------------+------------------------------------------------+
+| create(data)              | Crée un ticket standard                        |
+| createUrgent(data)        | Crée un ticket CRITICAL avec échéance 24h      |
+| createSupport(data)       | Crée un ticket de support (priorité MEDIUM)    |
+| createMaintenance(data)   | Crée un ticket de maintenance (priorité LOW)   |
++---------------------------+------------------------------------------------+
+
+Exemple d'utilisation :
+```typescript
+const factory = new TicketFactory();
+
+// Ticket standard
+const ticket = factory.create({
+  title: 'Problème de connexion',
+  description: 'Impossible de se connecter...',
+  createdById: 'user-123',
+  priority: 'HIGH',
+});
+// Résultat: { id: 'uuid', reference: 'TKT-20241218-0001', status: 'OPEN', ... }
+
+// Ticket urgent
+const urgent = factory.createUrgent({
+  title: 'Serveur down',
+  description: 'Le serveur principal ne répond plus',
+  createdById: 'user-123',
+});
+// Résultat: priority: 'CRITICAL', dueDate: +24h
+```
+
+--------------------------------------------------------------------------------
+3.3 INVOICE FACTORY
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/factories/invoice.factory.ts
+
+Méthodes disponibles :
++---------------------------+------------------------------------------------+
+| Méthode                   | Description                                    |
++---------------------------+------------------------------------------------+
+| create(data)              | Crée une facture avec TVA 20%                  |
+| createProforma(data)      | Crée un devis (référence PRO-...)              |
+| createWithReducedTax(data)| Crée avec TVA réduite (5.5%)                   |
+| createWithoutTax(data)    | Crée sans TVA (export, auto-entrepreneur)      |
++---------------------------+------------------------------------------------+
+
+Calculs automatiques :
+- Génération de la référence unique (INV-YYYYMMDD-XXXX)
+- Calcul du sous-total HT
+- Calcul de la TVA
+- Calcul du total TTC
+- Date d'échéance par défaut (+30 jours)
+
+--------------------------------------------------------------------------------
+3.4 USER FACTORY
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/factories/user.factory.ts
+
+Méthodes disponibles :
++---------------------------+------------------------------------------------+
+| Méthode                   | Description                                    |
++---------------------------+------------------------------------------------+
+| create(data)              | Crée un utilisateur (async, hachage mdp)       |
+| createSync(data)          | Crée sans hachage (pour tests)                 |
+| createAdmin(data, roleId) | Crée un administrateur                         |
+| createTechnician(...)     | Crée un technicien                             |
+| createClient(...)         | Crée un client                                 |
+| createRole(...)           | Crée un rôle avec permissions                  |
+| createDefaultRoles()      | Crée les 3 rôles par défaut du système         |
++---------------------------+------------------------------------------------+
+
+================================================================================
+                         PATTERN 2 : SINGLETON
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 CONCEPT
+--------------------------------------------------------------------------------
+
+Le pattern Singleton garantit qu'une classe n'a qu'une seule instance et fournit
+un point d'accès global à celle-ci.
+
+Cas d'usage dans ServiceHub :
+- Génération cohérente des références (compteurs partagés)
+- Configuration globale de l'application
+
+--------------------------------------------------------------------------------
+4.2 REFERENCE GENERATOR (Singleton)
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/singleton/reference-generator.singleton.ts
+
+Garantit l'unicité des références en maintenant des compteurs partagés.
+
+```typescript
+// Obtention de l'instance unique
+const generator = ReferenceGenerator.getInstance();
+
+// Génération de références
+const ticketRef = generator.generateTicketReference();   // TKT-20241218-0001
+const invoiceRef = generator.generateInvoiceReference(); // INV-20241218-0001
+const paymentRef = generator.generatePaymentReference(); // PAY-20241218-0001
+
+// Les appels suivants incrémentent automatiquement
+generator.generateTicketReference();  // TKT-20241218-0002
+generator.generateTicketReference();  // TKT-20241218-0003
+```
+
+Structure du Singleton :
++------------------------------------------------------------------+
+| ReferenceGenerator                                               |
++------------------------------------------------------------------+
+| - instance: ReferenceGenerator (static, private)                 |
+| - counters: Map<dateStr, Map<type, number>>                      |
++------------------------------------------------------------------+
+| + getInstance(): ReferenceGenerator (static)                     |
+| + generate(type: ReferenceType): string                          |
+| + generateTicketReference(): string                              |
+| + generateInvoiceReference(): string                             |
+| + generatePaymentReference(): string                             |
+| + initializeCounter(type, date, value): void                     |
+| + reset(): void                                                  |
++------------------------------------------------------------------+
+
+--------------------------------------------------------------------------------
+4.3 APP CONFIG (Singleton)
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/singleton/app-config.singleton.ts
+
+Centralise la configuration de l'application.
+
+```typescript
+const config = AppConfig.getInstance();
+
+// Lecture
+const taxRate = config.get('defaultTaxRate');        // 20
+const isProd = config.isProd;                        // false
+
+// Modification
+config.set('defaultTaxRate', 19.6);
+
+// Chargement depuis l'environnement
+config.loadFromEnv();
+
+// Verrouillage (en production)
+config.lock();
+```
+
+Paramètres configurables :
++---------------------------+----------------+--------------------------------+
+| Paramètre                 | Défaut         | Description                    |
++---------------------------+----------------+--------------------------------+
+| defaultTaxRate            | 20             | Taux de TVA par défaut         |
+| defaultPaymentDelayDays   | 30             | Délai de paiement              |
+| maxTicketsPerUser         | 100            | Limite tickets par utilisateur |
+| ticketAutoCloseDelayDays  | 7              | Fermeture auto après résolution|
+| bcryptSaltRounds          | 10             | Rounds de hachage bcrypt       |
+| jwtExpirationHours        | 24             | Durée de validité JWT          |
+| paginationDefaultLimit    | 10             | Pagination par défaut          |
+| paginationMaxLimit        | 100            | Pagination maximum             |
++---------------------------+----------------+--------------------------------+
+
+================================================================================
+                         PATTERN 3 : BUILDER
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 CONCEPT
+--------------------------------------------------------------------------------
+
+Le pattern Builder permet de construire des objets complexes étape par étape,
+avec une interface fluide (method chaining).
+
+Avantages :
+- Construction lisible et expressive
+- Paramètres optionnels facilement gérables
+- Validation à la construction
+- Réutilisabilité du builder
+
+--------------------------------------------------------------------------------
+5.2 INVOICE BUILDER
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/builders/invoice.builder.ts
+
+```typescript
+// Construction fluide d'une facture
+const invoice = InvoiceBuilder.create()
+  .createdBy('admin-123')
+  .withPaymentDelay(45)
+  .withTaxRate(20)
+  .withNotes('Facture pour intervention du 15/12')
+  .addLine('Diagnostic système', 1, 150)
+  .addLine('Remplacement composant', 2, 75)
+  .addHourlyService('Main d\'oeuvre', 3, 50)
+  .addLineWithDiscount('Pièce détachée', 1, 200, 10)
+  .build();
+
+// Facture sans TVA (export)
+const exportInvoice = InvoiceBuilder.create()
+  .createdBy('admin-123')
+  .withoutTax()
+  .addLine('Prestation export', 1, 1000)
+  .build();
+```
+
+Méthodes du builder :
++--------------------------------+--------------------------------------------+
+| Méthode                        | Description                                |
++--------------------------------+--------------------------------------------+
+| withReference(ref)             | Définit la référence manuellement          |
+| withStatus(status)             | Définit le statut initial                  |
+| withIssueDate(date)            | Définit la date d'émission                 |
+| withDueDate(date)              | Définit la date d'échéance                 |
+| withPaymentDelay(days)         | Définit le délai de paiement               |
+| withTaxRate(rate)              | Définit le taux de TVA                     |
+| withReducedTax()               | TVA réduite (5.5%)                         |
+| withoutTax()                   | Sans TVA                                   |
+| withNotes(notes)               | Ajoute des notes                           |
+| createdBy(userId)              | Définit le créateur                        |
+| addLine(desc, qty, price)      | Ajoute une ligne                           |
+| addHourlyService(desc, h, rate)| Ajoute un service horaire                  |
+| addLineWithDiscount(...)       | Ajoute une ligne avec remise               |
+| build()                        | Construit la facture finale                |
++--------------------------------+--------------------------------------------+
+
+--------------------------------------------------------------------------------
+5.3 TICKET BUILDER
+--------------------------------------------------------------------------------
+
+Fichier : src/common/patterns/builders/ticket.builder.ts
+
+```typescript
+// Ticket de bug urgent
+const bugTicket = TicketBuilder.create()
+  .withTitle('Crash application')
+  .withDescription('L\'application crash au démarrage')
+  .createdBy('client-456')
+  .asBug()
+  .assignedTo('tech-789')
+  .build();
+
+// Ticket de maintenance planifiée
+const maintenance = TicketBuilder.create()
+  .withTitle('Mise à jour serveur')
+  .withDescription('Mise à jour de sécurité planifiée')
+  .createdBy('admin-123')
+  .asMaintenance()
+  .dueInDays(7)
+  .addTags(['planifié', 'infra'])
+  .build();
+
+// Ticket urgent
+const urgent = TicketBuilder.create()
+  .withTitle('Site inaccessible')
+  .withDescription('Le site ne répond plus')
+  .createdBy('client-456')
+  .asUrgent()
+  .build();
+```
+
+Presets disponibles :
++------------------+------------------+------------------+------------------+
+| Preset           | Priorité         | Échéance         | Tags             |
++------------------+------------------+------------------+------------------+
+| asUrgent()       | CRITICAL         | +24h             | urgent           |
+| asSupport()      | MEDIUM           | +3 jours         | support          |
+| asMaintenance()  | LOW              | +7 jours         | maintenance      |
+| asBug()          | HIGH             | +2 jours         | bug              |
+| asFeatureRequest()| LOW             | -                | feature-request  |
++------------------+------------------+------------------+------------------+
+
+================================================================================
+                      FACTORY GLOBALE (ABSTRACT FACTORY)
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 CONCEPT
+--------------------------------------------------------------------------------
+
+L'EntityFactory est une Abstract Factory qui fournit un point d'entrée unique
+pour la création de toutes les entités métier.
+
+Fichier : src/common/patterns/factories/entity.factory.ts
+
+--------------------------------------------------------------------------------
+6.2 UTILISATION
+--------------------------------------------------------------------------------
+
+```typescript
+// Injection dans un service NestJS
+@Injectable()
+export class MyService {
+  constructor(private readonly entityFactory: EntityFactory) {}
+
+  async createNewTicket() {
+    // Via factory directe
+    const ticket = this.entityFactory.createTicket({
+      title: 'Mon ticket',
+      description: 'Description',
+      createdById: 'user-123',
+    });
+
+    // Via builder pour plus de contrôle
+    const customTicket = this.entityFactory.getTicketBuilder()
+      .withTitle('Ticket personnalisé')
+      .withDescription('Description détaillée')
+      .createdBy('user-123')
+      .asCritical()
+      .dueInHours(4)
+      .build();
+
+    return ticket;
+  }
+
+  async createInvoice() {
+    // Facture simple
+    const invoice = this.entityFactory.createInvoice({
+      createdById: 'admin-123',
+      lines: [
+        { description: 'Service', quantity: 1, unitPrice: 100 }
+      ],
+    });
+
+    // Facture avec builder
+    const customInvoice = this.entityFactory.getInvoiceBuilder()
+      .createdBy('admin-123')
+      .withPaymentDelay(60)
+      .addLine('Prestation A', 1, 500)
+      .addLine('Prestation B', 2, 250)
+      .build();
+
+    return invoice;
+  }
+}
+```
+
+--------------------------------------------------------------------------------
+6.3 MÉTHODES DISPONIBLES
+--------------------------------------------------------------------------------
+
+TICKETS :
+- createTicket(data)
+- createUrgentTicket(data)
+- createSupportTicket(data)
+- createMaintenanceTicket(data)
+- getTicketBuilder()
+
+FACTURES :
+- createInvoice(data)
+- createProforma(data)
+- createInvoiceWithReducedTax(data)
+- createInvoiceWithoutTax(data)
+- getInvoiceBuilder()
+
+UTILISATEURS :
+- createUser(data) [async]
+- createUserSync(data)
+- createAdmin(data, roleId) [async]
+- createTechnician(data, roleId) [async]
+- createClient(data, roleId) [async]
+
+RÔLES :
+- createRole(name, description, permissions)
+- createDefaultRoles()
+
+================================================================================
+                         STRUCTURE DES FICHIERS
+================================================================================
+
+/backend/src/common/patterns
+│
+├── index.ts                              # Export principal
+├── patterns.module.ts                    # Module NestJS
+│
+├── /factories
+│   ├── index.ts
+│   ├── ticket.factory.ts                 # Factory Tickets
+│   ├── invoice.factory.ts                # Factory Factures
+│   ├── user.factory.ts                   # Factory Utilisateurs
+│   └── entity.factory.ts                 # Factory Globale
+│
+├── /singleton
+│   ├── index.ts
+│   ├── reference-generator.singleton.ts  # Générateur de références
+│   └── app-config.singleton.ts           # Configuration globale
+│
+└── /builders
+    ├── index.ts
+    ├── ticket.builder.ts                 # Builder Tickets
+    └── invoice.builder.ts                # Builder Factures
+
+================================================================================
+                         INTÉGRATION NESTJS
+================================================================================
+
+Le module PatternsModule est marqué @Global() et exporte les factories :
+
+```typescript
+// app.module.ts
+@Module({
+  imports: [
+    PatternsModule,  // Factories disponibles globalement
+    // ...
+  ],
+})
+export class AppModule {}
+
+// Dans n'importe quel service
+@Injectable()
+export class TicketsService {
+  constructor(
+    private readonly entityFactory: EntityFactory,
+    // ou injection par token
+    @Inject('TICKET_FACTORY')
+    private readonly ticketFactory: TicketFactory,
+  ) {}
+}
+```
+
+================================================================================
+                              LIVRABLES SÉANCE 6
+================================================================================
+
+[X] TicketFactory - Création de tickets avec variantes
+[X] InvoiceFactory - Création de factures avec calculs automatiques
+[X] UserFactory - Création d'utilisateurs avec hachage
+[X] ReferenceGenerator (Singleton) - Génération de références uniques
+[X] AppConfig (Singleton) - Configuration centralisée
+[X] InvoiceBuilder - Construction fluide de factures
+[X] TicketBuilder - Construction fluide de tickets
+[X] EntityFactory - Factory globale (Abstract Factory)
+[X] PatternsModule - Module NestJS pour l'injection
+[X] Documentation (ce document)
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 18/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================
