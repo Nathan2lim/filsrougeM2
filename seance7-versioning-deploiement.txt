@@ -1,0 +1,420 @@
+================================================================================
+                    SÉANCE 7 - VERSIONING & DÉPLOIEMENT
+                              SERVICEHUB PLATFORM
+================================================================================
+
+--------------------------------------------------------------------------------
+1. OBJECTIF
+--------------------------------------------------------------------------------
+
+Industrialiser le processus de build et de déploiement de l'application :
+
+- Versioning sémantique : Gestion cohérente des versions
+- Build multi-modules : Scripts de compilation automatisés
+- Packaging : Création d'artefacts de distribution
+- CI/CD : Pipeline d'intégration continue
+
+Note : Le projet utilisant Node.js/NestJS (et non Java/Maven), les livrables
+ont été adaptés en conséquence avec npm et Docker.
+
+--------------------------------------------------------------------------------
+2. VERSIONING SÉMANTIQUE
+--------------------------------------------------------------------------------
+
+2.1 PRINCIPE
+--------------------------------------------------------------------------------
+
+Le versioning sémantique (SemVer) suit le format : MAJOR.MINOR.PATCH
+
++----------+---------------------------+-----------------------------+
+| Type     | Quand l'utiliser          | Exemple                     |
++----------+---------------------------+-----------------------------+
+| MAJOR    | Changements incompatibles | 1.0.0 -> 2.0.0              |
+|          | Breaking changes API      |                             |
++----------+---------------------------+-----------------------------+
+| MINOR    | Nouvelles fonctionnalités | 1.0.0 -> 1.1.0              |
+|          | Rétro-compatibles         |                             |
++----------+---------------------------+-----------------------------+
+| PATCH    | Corrections de bugs       | 1.0.0 -> 1.0.1              |
+|          | Sans nouvelles features   |                             |
++----------+---------------------------+-----------------------------+
+
+2.2 CONFIGURATION DANS PACKAGE.JSON
+--------------------------------------------------------------------------------
+
+Scripts de versioning ajoutés :
+
+```json
+{
+  "scripts": {
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version",
+    "release:patch": "npm run prerelease && npm run version:patch",
+    "release:minor": "npm run prerelease && npm run version:minor",
+    "release:major": "npm run prerelease && npm run version:major"
+  }
+}
+```
+
+2.3 UTILISATION
+--------------------------------------------------------------------------------
+
+# Incrémenter la version patch (bug fix)
+npm run version:patch    # 1.0.0 -> 1.0.1
+
+# Incrémenter la version minor (nouvelle feature)
+npm run version:minor    # 1.0.0 -> 1.1.0
+
+# Incrémenter la version major (breaking change)
+npm run version:major    # 1.0.0 -> 2.0.0
+
+# Release complète (lint + test + build + version)
+npm run release:patch
+npm run release:minor
+npm run release:major
+
+================================================================================
+                         3. BUILD MULTI-MODULES
+================================================================================
+
+3.1 SCRIPTS NPM
+--------------------------------------------------------------------------------
+
++------------------------+----------------------------------------------------+
+| Script                 | Description                                        |
++------------------------+----------------------------------------------------+
+| npm run build          | Compilation TypeScript standard                    |
+| npm run build:clean    | Nettoyage + compilation                            |
+| npm run build:prod     | Build de production (clean + prune)                |
+| npm run ci:validate    | Validation complète (lint + test + build)          |
++------------------------+----------------------------------------------------+
+
+3.2 SCRIPT DE BUILD (scripts/build.sh)
+--------------------------------------------------------------------------------
+
+Script shell complet pour automatiser le build :
+
+```bash
+# Build complet
+./scripts/build.sh all
+
+# Commandes individuelles
+./scripts/build.sh clean      # Nettoyer
+./scripts/build.sh install    # Installer dépendances
+./scripts/build.sh lint       # Vérifier le code
+./scripts/build.sh test       # Exécuter les tests
+./scripts/build.sh build      # Compiler
+./scripts/build.sh package    # Créer le package
+./scripts/build.sh docker     # Build image Docker
+
+# Options
+./scripts/build.sh --skip-tests all   # Ignorer les tests
+./scripts/build.sh --skip-lint all    # Ignorer le lint
+```
+
+3.3 ÉTAPES DU BUILD
+--------------------------------------------------------------------------------
+
+    +-------------------+
+    |   1. CLEAN        |  Supprimer dist/, build/
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   2. INSTALL      |  npm ci (installation propre)
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   3. PRISMA       |  npx prisma generate
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   4. LINT         |  eslint (vérification code)
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   5. TEST         |  jest (tests unitaires)
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   6. BUILD        |  nest build (TypeScript -> JS)
+    +-------------------+
+            |
+            v
+    +-------------------+
+    |   7. PACKAGE      |  Création archive .tar.gz
+    +-------------------+
+
+================================================================================
+                         4. PACKAGING DOCKER
+================================================================================
+
+4.1 DOCKERFILE MULTI-STAGE
+--------------------------------------------------------------------------------
+
+Le Dockerfile utilise un build multi-stage pour optimiser l'image finale :
+
+Stage 1: DEPS
+- Base: node:20-alpine
+- Installation des dépendances npm
+
+Stage 2: BUILDER
+- Copie des dépendances
+- Génération Prisma
+- Compilation TypeScript
+- Prune des dépendances dev
+
+Stage 3: PRODUCTION
+- Image finale légère
+- Utilisateur non-root
+- Healthcheck intégré
+- Labels OCI pour le versioning
+
+4.2 LABELS OCI
+--------------------------------------------------------------------------------
+
+Labels standardisés pour le suivi des versions :
+
+```dockerfile
+LABEL org.opencontainers.image.title="ServiceHub Backend"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.source="https://github.com/..."
+```
+
+4.3 COMMANDES DOCKER
+--------------------------------------------------------------------------------
+
+```bash
+# Build avec version
+npm run docker:build
+
+# Build latest
+npm run docker:build:latest
+
+# Exécuter
+npm run docker:run
+
+# Build manuel avec arguments
+docker build \
+  --build-arg VERSION=1.0.0 \
+  --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+  -t servicehub-backend:1.0.0 \
+  .
+```
+
+4.4 TAILLE DES IMAGES
+--------------------------------------------------------------------------------
+
++------------------+------------------+
+| Stage            | Taille estimée   |
++------------------+------------------+
+| deps             | ~500 MB          |
+| builder          | ~600 MB          |
+| production       | ~150 MB          |
++------------------+------------------+
+
+L'image finale de production est optimisée (~150 MB) grâce à :
+- Alpine Linux
+- Suppression des dépendances dev
+- Copie uniquement des fichiers nécessaires
+
+================================================================================
+                         5. SCRIPT DE RELEASE
+================================================================================
+
+5.1 PROCESSUS DE RELEASE (scripts/release.sh)
+--------------------------------------------------------------------------------
+
+```bash
+# Release patch (bug fix)
+./scripts/release.sh patch
+
+# Release minor (nouvelle feature)
+./scripts/release.sh minor
+
+# Release major (breaking change)
+./scripts/release.sh major
+
+# Options
+./scripts/release.sh --dry-run minor   # Simuler sans modifier
+./scripts/release.sh --skip-tests patch # Sans tests
+./scripts/release.sh --no-push minor   # Sans push automatique
+```
+
+5.2 ÉTAPES DU PROCESSUS
+--------------------------------------------------------------------------------
+
+    +-------------------+
+    | 1. Vérifications  |  - Repository propre
+    |                   |  - Sur branche main
+    +-------------------+
+            |
+            v
+    +-------------------+
+    | 2. Validations    |  - Lint
+    |                   |  - Tests
+    |                   |  - Build
+    +-------------------+
+            |
+            v
+    +-------------------+
+    | 3. Version        |  - Mise à jour package.json
+    |                   |  - 1.0.0 -> 1.1.0
+    +-------------------+
+            |
+            v
+    +-------------------+
+    | 4. Changelog      |  - Génération automatique
+    |                   |  - Liste des commits
+    +-------------------+
+            |
+            v
+    +-------------------+
+    | 5. Commit         |  - chore(release): v1.1.0
+    |                   |  - Tag: v1.1.0
+    +-------------------+
+            |
+            v
+    +-------------------+
+    | 6. Push           |  - git push origin main
+    |                   |  - git push origin v1.1.0
+    +-------------------+
+
+================================================================================
+                         6. CI/CD (GITHUB ACTIONS)
+================================================================================
+
+6.1 PIPELINE
+--------------------------------------------------------------------------------
+
+Fichier : .github/workflows/ci.yml
+
+Déclencheurs :
+- Push sur main/develop
+- Pull Request vers main
+- Tags v*
+
+6.2 JOBS
+--------------------------------------------------------------------------------
+
++------------------+---------------------------+---------------------------+
+| Job              | Déclencheur               | Actions                   |
++------------------+---------------------------+---------------------------+
+| test             | Tous                      | Lint, Tests, Coverage     |
++------------------+---------------------------+---------------------------+
+| build            | Après test                | Compilation TypeScript    |
++------------------+---------------------------+---------------------------+
+| docker           | Push (pas PR)             | Build et push image       |
++------------------+---------------------------+---------------------------+
+| release          | Tag v*                    | Création GitHub Release   |
++------------------+---------------------------+---------------------------+
+
+6.3 WORKFLOW VISUEL
+--------------------------------------------------------------------------------
+
+    [Push/PR]
+        |
+        v
+    +-------+     +-------+     +--------+
+    | test  | --> | build | --> | docker |
+    +-------+     +-------+     +--------+
+        |                            |
+        |                            v
+        |                    [Push to Registry]
+        |
+        +---- [Tag v*] ----> +----------+
+                             | release  |
+                             +----------+
+                                  |
+                                  v
+                          [GitHub Release]
+
+================================================================================
+                         7. STRUCTURE DES FICHIERS
+================================================================================
+
+/servicehub-platform
+│
+├── /backend
+│   ├── package.json              # Scripts npm + versioning
+│   ├── Dockerfile                # Multi-stage optimisé
+│   └── ...
+│
+├── /scripts
+│   ├── build.sh                  # Script de build
+│   └── release.sh                # Script de release
+│
+├── docker-compose.prod.yml       # Déploiement production
+│
+└── /.github
+    └── /workflows
+        └── ci.yml                # Pipeline CI/CD
+
+================================================================================
+                         8. COMMANDES RÉCAPITULATIVES
+================================================================================
+
+DÉVELOPPEMENT :
+```bash
+npm run start:dev          # Démarrer en mode dev
+npm run lint               # Corriger le code
+npm run test               # Lancer les tests
+```
+
+BUILD :
+```bash
+npm run build              # Compilation simple
+npm run build:clean        # Clean + build
+./scripts/build.sh all     # Build complet
+```
+
+VERSION :
+```bash
+npm run version:patch      # 1.0.0 -> 1.0.1
+npm run version:minor      # 1.0.0 -> 1.1.0
+npm run version:major      # 1.0.0 -> 2.0.0
+```
+
+RELEASE :
+```bash
+./scripts/release.sh patch # Release bug fix
+./scripts/release.sh minor # Release feature
+./scripts/release.sh major # Release majeure
+```
+
+DOCKER :
+```bash
+npm run docker:build       # Build image versionnée
+npm run docker:run         # Lancer le conteneur
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+================================================================================
+                              LIVRABLES SÉANCE 7
+================================================================================
+
+[X] Versioning sémantique configuré (package.json)
+[X] Scripts npm de version (version:patch/minor/major)
+[X] Script de build (scripts/build.sh)
+[X] Script de release (scripts/release.sh)
+[X] Dockerfile multi-stage optimisé
+[X] Pipeline CI/CD GitHub Actions
+[X] Documentation (ce document)
+
+Équivalences Maven -> npm :
+- mvn clean install    -> npm run build:clean
+- mvn package          -> ./scripts/build.sh package
+- mvn release:prepare  -> ./scripts/release.sh
+- pom.xml version      -> package.json version
+
+--------------------------------------------------------------------------------
+Auteur : Nathan Gilbert
+Date : 18/12/2025
+Formation : Master 2 - Fil Rouge
+================================================================================
